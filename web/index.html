@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>SharePoint Tree</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: editor-style workbench — top command bar, tree pane (virtualized) + inspector pane, vim-like status line */
+:root{
+  --bg:#f4f6f8; --panel:#ffffff; --sunk:#eaeef2; --line:#d6dde4; --fg:#18212b; --muted:#5d6b79; --faint:#8a97a4;
+  --accent:#0b7480; --accent-soft:#d8eff1; --sel:#cfe7ea; --hit:#b45309; --folder:#b7791f; --file:#6b7a89; --lib:#5b4bb7;
+  --danger:#b42318; --ok:#1f7a4d;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --row:26px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f151b; --panel:#141c23; --sunk:#0b1116; --line:#24313c; --fg:#dbe4ec; --muted:#93a3b2; --faint:#64748a;
+  --accent:#4cc3c9; --accent-soft:#163a3f; --sel:#1b3c42; --hit:#f0a24a; --folder:#e0b25a; --file:#8c9cab; --lib:#a99bf2;
+  --danger:#f97066; --ok:#4cc38a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f151b; --panel:#141c23; --sunk:#0b1116; --line:#24313c; --fg:#dbe4ec; --muted:#93a3b2; --faint:#64748a;
+  --accent:#4cc3c9; --accent-soft:#163a3f; --sel:#1b3c42; --hit:#f0a24a; --folder:#e0b25a; --file:#8c9cab; --lib:#a99bf2;
+  --danger:#f97066; --ok:#4cc38a; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-family:var(--mono);font-weight:600;font-size:13px;letter-spacing:.02em;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.brand svg{color:var(--accent)}
+.filter{flex:1 1 260px;min-width:0;display:flex;align-items:center;gap:8px;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:0 10px;height:34px}
+.filter input{flex:1;min-width:0;border:0;background:transparent;font:13px var(--mono);color:var(--fg);outline:none}
+.filter input::placeholder{color:var(--faint)}
+kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--muted);background:var(--panel);white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);cursor:pointer;font-size:13px;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.btn.on{background:var(--accent-soft);border-color:var(--accent)}
+.btn[disabled]{opacity:.5;cursor:default}
+.main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px}
+.treewrap{min-width:0;min-height:0;display:flex;flex-direction:column;border-right:1px solid var(--line)}
+.tree{flex:1;min-height:0;overflow:auto;position:relative;outline:none;font-family:var(--mono);font-size:13px}
+.spacer{position:relative}
+.row{position:absolute;left:0;right:0;height:var(--row);display:flex;align-items:center;gap:4px;padding-right:12px;cursor:pointer;white-space:nowrap}
+.row:hover{background:var(--sunk)}
+.row.sel{background:var(--sel)}
+.tree:focus .row.sel{box-shadow:inset 2px 0 0 var(--accent)}
+.guide{width:16px;align-self:stretch;flex:none;position:relative}
+.guide::before{content:"";position:absolute;left:7px;top:0;bottom:0;border-left:1px solid var(--line)}
+.chev{width:16px;height:16px;flex:none;display:grid;place-items:center;color:var(--faint);transition:transform .12s}
+.chev.open{transform:rotate(90deg)}
+.chev.none{visibility:hidden}
+.ico{flex:none;display:grid;place-items:center}
+.ico.folder{color:var(--folder)} .ico.file{color:var(--file)} .ico.lib{color:var(--lib)}
+.name{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.name b{color:var(--hit);font-weight:600}
+.sub{color:var(--faint);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.meta{margin-left:auto;padding-left:10px;color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums;flex:none}
+.go{flex:none;opacity:0;color:var(--accent);display:grid;place-items:center;width:22px;height:22px;border-radius:4px;text-decoration:none}
+.row:hover .go,.row.sel .go{opacity:1}
+.go:hover{background:var(--accent-soft)}
+.spin{width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.err{color:var(--danger);font-size:12px}
+.pin{color:var(--hit)}
+.empty{padding:32px 20px;color:var(--muted);font-family:var(--sans);max-width:56ch;line-height:1.55}
+.empty h2{font-size:16px;color:var(--fg);margin:0 0 6px}
+.skel{height:12px;border-radius:3px;background:var(--sunk);margin:9px 16px}
+.insp{min-width:0;overflow:auto;background:var(--panel);padding:18px 18px 24px;display:flex;flex-direction:column;gap:16px}
+.insp h3{margin:0;font-size:17px;line-height:1.3;word-break:break-word;text-wrap:balance}
+.lbl{font:600 10.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.crumbs{display:flex;flex-wrap:wrap;gap:2px 4px;font:12.5px var(--mono);color:var(--muted)}
+.crumbs button{border:0;background:none;padding:1px 3px;border-radius:3px;cursor:pointer;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crumbs button:hover{background:var(--sunk);color:var(--fg)}
+.crumbs span{color:var(--faint)}
+.link{font:12px var(--mono);word-break:break-all;background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:8px 10px;color:var(--fg);user-select:all}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+.facts dt{color:var(--muted)} .facts dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.help{font-size:12.5px;color:var(--muted);line-height:1.6}
+.help table{border-collapse:collapse}
+.help td{padding:2px 10px 2px 0;vertical-align:top}
+.status{display:flex;align-items:center;gap:14px;font:12px var(--mono);color:var(--muted);border-top:1px solid var(--line);background:var(--panel);padding-block:5px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));white-space:nowrap;overflow:hidden}
+.mode{background:var(--accent);color:var(--panel);padding:1px 8px;border-radius:3px;font-weight:600}
+.status .grow{flex:1}
+.banner{padding:10px 16px;background:var(--accent-soft);border-bottom:1px solid var(--line);font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.banner.bad{background:color-mix(in srgb,var(--danger) 12%,var(--panel))}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;height:30px;flex:none}
+.seg button{border:0;background:var(--panel);padding:0 12px;cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--fg);font-weight:600}
+.seg .count{font:11px var(--mono);color:var(--muted)}
+.deepsel{height:30px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font:13px var(--sans);padding:0 6px}
+/* finder */
+.scrim{position:fixed;inset:0;background:color-mix(in srgb,var(--sunk) 60%,transparent);backdrop-filter:blur(2px);display:flex;justify-content:center;align-items:flex-start;padding:max(48px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px));z-index:20}
+.finder{width:min(760px,100%);max-height:min(640px,80vh);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.25);overflow:hidden}
+.finder .q{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.finder .q input{flex:1;min-width:0;border:0;background:transparent;font:15px var(--mono);color:var(--fg);outline:none}
+.flist{overflow:auto;padding:6px 0;font-family:var(--mono);font-size:13px}
+.fsec{padding:8px 14px 4px;font:600 10.5px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--faint);display:flex;gap:8px;align-items:center}
+.fitem{display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;min-width:0}
+.fitem.act{background:var(--sel)}
+.fitem .fp{color:var(--faint);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.fitem .fn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:55%}
+.fitem .fn b{color:var(--hit)}
+.ffoot{border-top:1px solid var(--line);padding:8px 14px;font:11.5px var(--mono);color:var(--muted);display:flex;gap:14px;flex-wrap:wrap}
+.toast{position:fixed;bottom:calc(40px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;z-index:30}
+@media (max-width:820px){
+  .main{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}
+  .treewrap{border-right:0;border-bottom:1px solid var(--line)}
+  .insp{max-height:42vh}
+  .hidesm{display:none}
+}
+@media (prefers-reduced-motion:reduce){.chev{transition:none}.spin{animation-duration:2s}}
+</style>
+
+</head>
+<body>
+<div class="bar">
+  <div class="brand"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v16M4 8h6M4 14h6M10 6h10v4H10zM10 12h10v4H10z"/></svg>SharePoint Tree</div>
+  <div class="seg" role="group" aria-label="View">
+    <button id="viewPinned" aria-pressed="false" title="Show only pinned folders (v)"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="color:var(--hit)"><path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1 6.3L12 17.5 6.5 20.4l1-6.3L3 9.7l6.2-.9z"/></svg>Pinned <span class="count" id="pinCount">0</span></button>
+    <button id="viewAll" aria-pressed="true" title="Show every library (v)">All</button>
+  </div>
+  <label class="filter" for="filter">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--faint)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+    <input id="filter" placeholder="Filter loaded folders (fuzzy)…" autocomplete="off" spellcheck="false">
+    <kbd>/</kbd>
+  </label>
+  <button class="btn primary" id="openFinder" title="Search all of SharePoint">Find <kbd style="background:transparent;color:inherit;border-color:currentColor">Ctrl K</kbd></button>
+  <button class="btn" id="toggleFiles" title="Show files as well as folders">Files</button>
+  <button class="btn hidesm" id="collapseAll" title="Collapse everything">Collapse</button>
+  <button class="btn hidesm" id="moreSites" title="Fetch the list of sites and libraries again">Reload sites</button>
+  <button class="btn hidesm" id="account" title="Sign out" hidden></button>
+</div>
+<div id="banner" hidden></div>
+<div class="main">
+  <div class="treewrap">
+    <div class="tree" id="tree" tabindex="0" aria-label="SharePoint folders" role="tree"><div class="spacer" id="spacer"></div></div>
+  </div>
+  <aside class="insp" id="insp"></aside>
+</div>
+<div class="status">
+  <span class="mode" id="mode">NORMAL</span>
+  <span id="stLibs">0 libraries</span>
+  <span id="stNodes" class="hidesm">0 folders loaded</span>
+  <span class="grow"></span>
+  <span id="stJobs"></span>
+  <button class="btn" id="cancelDeep" hidden style="height:22px;font-size:12px">Stop</button>
+</div>
+<div id="finderRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+(() => {
+const LS_KEY = "sptree:v2";
+const ROW = 26;
+
+// ---------- state ----------
+const S = {
+  ready: false, signedIn: null, user: "", auth: null,
+  nodes: new Map(),        // key -> node
+  libs: [],                // keys of library nodes
+  pinned: new Set(),       // keys, in the order they were pinned
+  pinMeta: new Map(),      // key -> {key, driveId, id, type, name, webUrl, trail}
+  view: "all",             // "pinned" | "all"
+  expanded: new Set(),
+  sel: null,
+  showFiles: false,
+  filter: "",
+  rows: [],
+  jobs: 0,
+  deep: null,              // {cancel:boolean, done, root}
+  loadingLibs: false,
+  fatal: null,
+};
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+// ---------- storage (this browser only) ----------
+function load() {
+  try {
+    const raw = localStorage.getItem(LS_KEY); if (!raw) return;
+    const d = JSON.parse(raw);
+    (d.libs || []).forEach(l => addLib(l, true));
+    S.showFiles = !!d.showFiles;
+    const kids = d.kids || {};
+    const rebuild = (start) => {
+      const queue = [...start];
+      while (queue.length) {
+        const k = queue.shift(); const n = S.nodes.get(k); const c = kids[k];
+        if (!n || !c || n.children) continue;
+        setChildren(n, c.items.map(([id, name, folder, size, webUrl]) => ({ id, name, folder, size, webUrl })), c.t);
+        n.children.forEach(ck => { const cn = S.nodes.get(ck); if (cn.type !== "file") queue.push(ck); });
+      }
+    };
+    rebuild(S.libs);
+    (d.pinned || []).forEach(p => {
+      if (!p || !p.key) return;
+      S.pinned.add(p.key); S.pinMeta.set(p.key, p);
+      if (!S.nodes.has(p.key)) { standalone(p); rebuild([p.key]); }
+    });
+    S.view = d.view === "pinned" ? "pinned" : "all";
+    (d.expanded || []).forEach(k => { if (S.nodes.has(k)) S.expanded.add(k); });
+    if (d.sel && S.nodes.has(d.sel)) S.sel = d.sel;
+  } catch (e) { /* storage unavailable: start fresh */ }
+}
+let saveT = 0, saveDirty = false;
+function save() { clearTimeout(saveT); saveDirty = true; saveT = setTimeout(flushSave, 600); }
+addEventListener("pagehide", () => saveDirty && flushSave());
+document.addEventListener("visibilitychange", () => document.hidden && saveDirty && flushSave());
+function flushSave() {
+  clearTimeout(saveT); saveDirty = false;
+  const kids = {};
+  for (const n of S.nodes.values()) if (n.children && n.type !== "file")
+    kids[n.key] = { t: n.loadedAt, items: n.children.map(k => { const c = S.nodes.get(k); return [c.id, c.name, c.type === "folder", c.size, c.webUrl]; }) };
+  const d = {
+    libs: S.libs.map(k => S.nodes.get(k).lib),
+    pinned: [...S.pinned].map(k => S.pinMeta.get(k)).filter(Boolean), view: S.view,
+    expanded: [...S.expanded], sel: S.sel, showFiles: S.showFiles, kids,
+  };
+  try { localStorage.setItem(LS_KEY, JSON.stringify(d)); }
+  catch (e) { try { d.kids = {}; localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch (e2) {} }
+}
+
+// ---------- links ----------
+function directUrl(n) { return n.webUrl || ""; }
+function openUrl(n) { return n.webUrl || "#"; }
+
+// ---------- model ----------
+const libKey = driveId => "lib:" + driveId;
+const itemKey = (driveId, id) => driveId + "|" + id;
+function addLib(lib, quiet) {
+  const key = libKey(lib.driveId);
+  let n = S.nodes.get(key);
+  if (n) { n.lib = lib; n.name = lib.site; n.webUrl = lib.webUrl; n.sub = libSub(lib); return n; }
+  n = { key, id: "root", type: "lib", driveId: lib.driveId, lib, name: lib.site, sub: libSub(lib), webUrl: lib.webUrl,
+    trail: [], parent: null, depth: 0, children: null, loading: false, error: null };
+  S.nodes.set(key, n); S.libs.push(key);
+  if (!quiet) { sortLibs(); save(); }
+  return n;
+}
+function libSub(lib) { return /^(shared documents|documents|ドキュメント)$/i.test(lib.name) || lib.name === lib.site ? "" : lib.name; }
+function sortLibs() {
+  S.libs.sort((a, b) => {
+    const pa = S.pinned.has(a), pb = S.pinned.has(b);
+    if (pa !== pb) return pa ? -1 : 1;
+    const A = S.nodes.get(a), B = S.nodes.get(b);
+    return A.name.localeCompare(B.name, undefined, { numeric: true, sensitivity: "base" }) || (A.sub || "").localeCompare(B.sub || "");
+  });
+}
+function setChildren(n, items, t) {
+  items.sort((a, b) => (!!a.folder === !!b.folder ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }) : a.folder ? -1 : 1));
+  n.children = items.map(it => {
+    const key = itemKey(n.driveId, it.id);
+    let c = S.nodes.get(key);
+    const type = it.folder ? "folder" : "file";
+    if (!c) {
+      c = { key, id: it.id, driveId: n.driveId, type, name: it.name, size: it.size, webUrl: it.webUrl, modified: it.modified,
+        parent: n.key, depth: n.depth + 1, children: type === "file" ? [] : null, loading: false, error: null };
+      S.nodes.set(key, c);
+    } else { Object.assign(c, { name: it.name, size: it.size, webUrl: it.webUrl || c.webUrl, parent: n.key, depth: n.depth + 1 }); }
+    return key;
+  });
+  n.loadedAt = t || Date.now();
+  n.nFolders = items.filter(i => i.folder).length;
+  n.nFiles = items.length - n.nFolders;
+}
+function trailOf(n) {
+  const p = pathOf(n);
+  const pre = p[0].type === "lib" ? [] : (p[0].trail || []);
+  return pre.concat(p.slice(0, -1).map(x => x.name));
+}
+function metaOf(n) { return { key: n.key, driveId: n.driveId, id: n.id, type: n.type, name: n.name, webUrl: n.webUrl, lib: n.lib, trail: trailOf(n) }; }
+// A pinned folder whose parents aren't loaded yet: a node with no parent link, rebuilt from saved info.
+function standalone(p) {
+  if (p.type === "lib") return p.lib ? addLib(p.lib, true) : null;
+  const n = { key: p.key, id: p.id, driveId: p.driveId, type: p.type, name: p.name, webUrl: p.webUrl, trail: p.trail || [],
+    parent: null, depth: (p.trail || []).length, children: p.type === "file" ? [] : null, loading: false, error: null };
+  S.nodes.set(n.key, n);
+  return n;
+}
+function underPinned(key) {
+  let c = S.nodes.get(key);
+  while (c) { if (S.pinned.has(c.key)) return true; c = c.parent && S.nodes.get(c.parent); }
+  return false;
+}
+function pathOf(n) { const out = []; let c = n; while (c) { out.unshift(c); c = c.parent && S.nodes.get(c.parent); } return out; }
+
+// ---------- local API ----------
+const queue = []; let active = 0; const MAXC = 6;
+function enqueue(fn) { return new Promise((res, rej) => { queue.push({ fn, res, rej }); pump(); }); }
+function pump() {
+  while (active < MAXC && queue.length) {
+    const { fn, res, rej } = queue.shift(); active++; S.jobs = active + queue.length; status();
+    fn().then(res, rej).finally(() => { active--; S.jobs = active + queue.length; status(); pump(); });
+  }
+}
+async function api(path, opts = {}) {
+  let r;
+  try {
+    r = await fetch(path, { ...opts, headers: { "X-SPTree": "1", ...(opts.headers || {}) } });
+  } catch (e) { throw { code: "offline", message: "Can't reach the sptree app. Is it still running?" }; }
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw (body && body.error) || { code: "http_" + r.status, message: "Request failed (" + r.status + ")" };
+  return body;
+}
+async function listFolder(n) {
+  const q = new URLSearchParams({ drive: n.driveId });
+  if (n.type !== "lib") q.set("item", n.id);
+  const r = await enqueue(() => api("/api/children?" + q));
+  return r.items || [];
+}
+
+// ---------- errors ----------
+function errCopy(e) {
+  switch (e && e.code) {
+    case "needs_login": return "Sign in to Microsoft 365 to continue.";
+    case "offline": return e.message;
+    case "forbidden": return "You don't have access to this folder.";
+    case "not_found": return "This folder no longer exists. Refresh its parent.";
+    case "throttled": return "Microsoft Graph is throttling requests. Wait a moment and try again.";
+    case "timeout": return "Microsoft Graph didn't answer in time. Try again.";
+    default: return (e && e.message) ? String(e.message).slice(0, 200) : "Couldn't reach SharePoint.";
+  }
+}
+function handleErr(e, n) {
+  if (e && e.code === "needs_login") { S.signedIn = false; checkAuth(); }
+  else if (e && e.code === "offline") { S.fatal = e; banner(); }
+  if (n) n.error = errCopy(e);
+}
+
+// ---------- loading ----------
+async function ensureLoaded(n, refresh) {
+  if (!n || n.type === "file") return;
+  if (n.children && !refresh) return;
+  if (n.loading) return n.loading;
+  n.error = null;
+  n.loading = (async () => {
+    try { setChildren(n, await listFolder(n)); save(); }
+    catch (e) { handleErr(e, n); }
+    finally { n.loading = false; scheduleRender(); }
+  })();
+  scheduleRender();
+  return n.loading;
+}
+async function toggle(n, force) {
+  if (!n || n.type === "file") return;
+  const open = force !== undefined ? force : !S.expanded.has(n.key);
+  if (open) { S.expanded.add(n.key); scheduleRender(); await ensureLoaded(n); }
+  else S.expanded.delete(n.key);
+  save(); scheduleRender();
+}
+async function deepExpand(n, maxDepth) {
+  if (!n || n.type === "file") return;
+  if (S.deep) S.deep.cancel = true;
+  const job = S.deep = { cancel: false, done: 0, root: n.name };
+  $("cancelDeep").hidden = false;
+  const LIMIT = 5000;
+  let frontier = [n];
+  for (let d = 0; d <= maxDepth && frontier.length && !job.cancel; d++) {
+    const next = [];
+    await Promise.all(frontier.map(async f => {
+      if (job.cancel || job.done > LIMIT) return;
+      S.expanded.add(f.key);
+      await ensureLoaded(f); job.done++; status();
+      if (f.children) f.children.forEach(k => { const c = S.nodes.get(k); if (c.type !== "file") next.push(c); });
+    }));
+    frontier = d < maxDepth ? next : [];
+  }
+  if (S.deep === job) { S.deep = null; $("cancelDeep").hidden = true; }
+  save(); scheduleRender(); status();
+  if (!job.cancel) toast(`Expanded ${job.done} folders under ${n.name}`);
+}
+// Load the path from the library root down to an item, then select it.
+async function reveal(driveId, id) {
+  const lib = S.nodes.get(libKey(driveId));
+  if (!lib) { toast("That library isn't in your list yet. Try Reload sites."); return null; }
+  let chain;
+  try { chain = (await enqueue(() => api("/api/ancestors?" + new URLSearchParams({ drive: driveId, item: id })))).chain || []; }
+  catch (e) { handleErr(e); toast(errCopy(e)); return null; }
+  let cur = lib;
+  for (const step of chain) {
+    S.expanded.add(cur.key);
+    await ensureLoaded(cur);
+    const next = S.nodes.get(itemKey(driveId, step.id));
+    if (!next) break;
+    cur = next;
+  }
+  if (cur.type === "file" && !S.showFiles) { S.showFiles = true; syncToggles(); }
+  save(); select(cur.key, true);
+  return cur;
+}
+
+// ---------- fuzzy ----------
+function fuzzy(q, s) {
+  if (!q) return { score: 0, idx: [] };
+  const ql = q.toLowerCase(), sl = s.toLowerCase();
+  const sub = sl.indexOf(ql);
+  if (sub >= 0) { const idx = []; for (let i = 0; i < ql.length; i++) idx.push(sub + i); return { score: 1000 - sub + (sub === 0 ? 200 : 0) - s.length * 0.5, idx }; }
+  let qi = 0, score = 0, prev = -2; const idx = [];
+  for (let i = 0; i < sl.length && qi < ql.length; i++) {
+    if (sl[i] === ql[qi]) {
+      idx.push(i);
+      score += (i === prev + 1 ? 15 : 1) + (i === 0 || /[\s_\-./()]/.test(s[i - 1]) ? 10 : 0);
+      prev = i; qi++;
+    }
+  }
+  if (qi < ql.length) return null;
+  return { score: score - s.length * 0.3, idx };
+}
+function hl(s, idx) {
+  if (!idx || !idx.length) return esc(s);
+  const set = new Set(idx); let out = "";
+  for (let i = 0; i < s.length; i++) out += set.has(i) ? "<b>" + esc(s[i]) + "</b>" : esc(s[i]);
+  return out;
+}
+
+// ---------- rows ----------
+function roots() { return S.view === "pinned" ? [...S.pinned].filter(k => S.nodes.has(k)) : S.libs; }
+function visible(n) { return S.showFiles || n.type !== "file"; }
+function buildRows() {
+  const rows = [];
+  if (S.filter) {
+    const keep = new Set(), match = new Map();
+    for (const n of S.nodes.values()) {
+      if (!visible(n)) continue;
+      const m = fuzzy(S.filter, n.name);
+      if (m && (m.score > 0 || S.filter.length < 3 || m.idx.length)) {
+        match.set(n.key, m);
+        let c = n; while (c) { keep.add(c.key); c = c.parent && S.nodes.get(c.parent); }
+      }
+    }
+    let hits = 0;
+    const walk = (k, d) => {
+      const n = S.nodes.get(k); if (!keep.has(k)) return;
+      const m = match.get(k); if (m) hits++;
+      rows.push({ n, m, d, root: d === 0 });
+      (n.children || []).forEach(c => walk(c, d + 1));
+    };
+    roots().forEach(k => walk(k, 0));
+    S.filterHits = hits;
+  } else {
+    const walk = (k, d) => {
+      const n = S.nodes.get(k); if (!n || !visible(n)) return;
+      rows.push({ n, d, root: d === 0 });
+      if (S.expanded.has(k) && n.children) n.children.forEach(c => walk(c, d + 1));
+    };
+    roots().forEach(k => walk(k, 0));
+  }
+  S.rows = rows;
+}
+
+function fmtSize(b) {
+  if (b == null) return "";
+  const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; let v = b;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return (i === 0 ? v : v.toFixed(v < 10 ? 1 : 0)) + " " + u[i];
+}
+const ICON = {
+  chev: '<svg width="10" height="10" viewBox="0 0 10 10"><path d="M3 1.5 6.5 5 3 8.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+  folder: '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2H19.5A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>',
+  folderOpen: '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2H18.5A1.5 1.5 0 0 1 20 8.5V10H7.2a1.5 1.5 0 0 0-1.4 1L3 18.2z"/><path d="M6.6 11.6A1 1 0 0 1 7.5 11h14a.8.8 0 0 1 .75 1.06l-2.2 6.2a1 1 0 0 1-.94.74H4.2z"/></svg>',
+  file: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>',
+  lib: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="11" width="18" height="5" rx="1"/><path d="M7 20h10"/></svg>',
+  ext: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  star: '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 2.8 5.8 6.2.9-4.5 4.4 1 6.3L12 17.5 6.5 20.4l1-6.3L3 9.7l6.2-.9z"/></svg>',
+};
+
+let rafPending = false;
+function scheduleRender() { if (rafPending) return; rafPending = true; requestAnimationFrame(() => { rafPending = false; render(); }); }
+function render() {
+  buildRows();
+  const tree = $("tree"), spacer = $("spacer");
+  if (!S.rows.length || S.signedIn === false) {
+    spacer.style.height = "auto";
+    spacer.innerHTML = emptyState();
+  } else {
+    spacer.style.height = S.rows.length * ROW + "px";
+    paintRows();
+  }
+  inspector(); status();
+}
+function emptyState() {
+  if (S.fatal) return `<div class="empty"><h2>Can't load SharePoint</h2>${esc(errCopy(S.fatal))}</div>`;
+  if (S.view === "pinned" && !S.pinned.size) return `<div class="empty"><h2>No pinned folders yet</h2>Switch to <button class="btn" data-view="all" style="height:24px">All</button>, select a folder you use often and press <kbd>p</kbd> or click <b>Pin</b> on the right. You can also press <kbd>Ctrl K</kbd>, find a folder and press <kbd>Alt Enter</kbd> to pin it straight from the results. Pinned folders show up here on their own, with everything inside them.</div>`;
+  if (S.view === "pinned" && S.filter) return `<div class="empty"><h2>Nothing under your pins matches “${esc(S.filter)}”</h2>The filter only covers loaded folders inside pinned ones. Switch to <button class="btn" data-view="all" style="height:24px">All</button> or press <kbd>Ctrl K</kbd> to search all of SharePoint.</div>`;
+  if (S.signedIn === false) return signInHtml();
+  if (!S.ready || S.loadingLibs) return `<div class="empty"><h2>Loading your SharePoint libraries…</h2>Listing every site and document library you can open. With many sites this can take a little while the first time.</div>` + Array.from({ length: 8 }, (_, i) => `<div class="skel" style="width:${40 + (i * 37) % 45}%"></div>`).join("");
+  if (S.filter) return `<div class="empty"><h2>No loaded folder matches “${esc(S.filter)}”</h2>The filter only covers folders already loaded. Press <kbd>Ctrl K</kbd> to search all of SharePoint.</div>`;
+  return `<div class="empty"><h2>No libraries found</h2>Your account doesn't seem to have access to any SharePoint document libraries. Click <b>Reload sites</b> to try again.</div>`;
+}
+function paintRows() {
+  const tree = $("tree"), spacer = $("spacer");
+  const top = tree.scrollTop, h = tree.clientHeight || 600;
+  const start = Math.max(0, Math.floor(top / ROW) - 15), end = Math.min(S.rows.length, Math.ceil((top + h) / ROW) + 15);
+  let html = "";
+  for (let i = start; i < end; i++) html += rowHtml(S.rows[i], i);
+  spacer.innerHTML = html;
+}
+function rowHtml({ n, m, d, root }, i) {
+  const open = S.filter ? true : S.expanded.has(n.key);
+  const isFile = n.type === "file";
+  const leaf = isFile || (n.children && n.children.filter(k => visible(S.nodes.get(k))).length === 0);
+  let guides = ""; for (let g = 0; g < d; g++) guides += '<span class="guide"></span>';
+  let sub = n.sub || "";
+  if (root && S.view === "pinned" && n.type !== "lib") sub = trailOf(n).join(" › ");
+  const ico = n.type === "lib" ? ICON.lib : isFile ? ICON.file : (open && n.children ? ICON.folderOpen : ICON.folder);
+  const cls = n.type === "lib" ? "lib" : isFile ? "file" : "folder";
+  let meta = "";
+  if (n.loading) meta = '<span class="spin" aria-label="Loading"></span>';
+  else if (n.error) meta = '<span class="err">error</span>';
+  else if (n.type !== "lib" && n.size != null) meta = fmtSize(n.size);
+  const pin = S.pinned.has(n.key) ? `<span class="pin" title="Pinned">${ICON.star}</span>` : "";
+  return `<div class="row${S.sel === n.key ? " sel" : ""}" role="treeitem" aria-expanded="${isFile ? "" : open}" data-k="${esc(n.key)}" style="top:${i * ROW}px;padding-left:${6}px">
+    ${guides}<span class="chev${leaf ? " none" : ""}${open && !leaf ? " open" : ""}" data-act="toggle">${ICON.chev}</span>
+    <span class="ico ${cls}">${ico}</span>${pin}
+    <span class="name">${hl(n.name, m && m.idx)}</span>${sub ? `<span class="sub">· ${esc(sub)}</span>` : ""}
+    <span class="meta">${meta}</span>
+    <a class="go" href="${esc(openUrl(n))}" target="_blank" rel="noopener" title="Open in SharePoint" data-act="go">${ICON.ext}</a>
+  </div>`;
+}
+
+// ---------- inspector ----------
+function inspector() {
+  const el = $("insp"); const n = S.sel && S.nodes.get(S.sel);
+  if (!n) {
+    el.innerHTML = `<div><div class="lbl">Selected</div><h3 style="color:var(--muted)">Nothing selected</h3></div>${helpHtml()}`;
+    return;
+  }
+  const path = pathOf(n);
+  const pre = path[0].type === "lib" ? "" : (path[0].trail || []).map(s => `<span style="color:var(--muted);padding:1px 3px">${esc(s)}</span><span>›</span>`).join("");
+  const crumbs = pre + path.map((p, i) => `<button data-sel="${esc(p.key)}" title="${esc(p.name)}">${esc(p.name)}</button>${i < path.length - 1 ? "<span>›</span>" : ""}`).join("");
+  const facts = [];
+  facts.push(["Type", n.type === "lib" ? "Document library" : n.type === "file" ? "File" : "Folder"]);
+  if (n.type === "lib") facts.push(["Site", n.lib.site], ["Library", n.lib.name]);
+  if (n.modified) facts.push(["Modified", new Date(n.modified).toLocaleString()]);
+  if (n.size != null) facts.push(["Size", fmtSize(n.size)]);
+  if (n.children && n.type !== "file") facts.push(["Contains", `${n.nFolders} folders · ${n.nFiles} files`]);
+  if (n.loadedAt) facts.push(["Loaded", ago(n.loadedAt)]);
+  el.innerHTML = `
+    <div><div class="lbl">Selected</div><h3>${esc(n.name)}</h3></div>
+    <div><div class="lbl">Path</div><div class="crumbs">${crumbs}</div></div>
+    <div class="actions">
+      <a class="btn primary" href="${esc(openUrl(n))}" target="_blank" rel="noopener">${ICON.ext} Open in SharePoint</a>
+      <button class="btn" data-do="copy">Copy link</button>
+      <button class="btn${S.pinned.has(n.key) ? " on" : ""}" data-do="pin" title="Pin (p)"><span class="pin">${ICON.star}</span> ${S.pinned.has(n.key) ? "Unpin" : "Pin"}</button>
+    </div>
+    <div><div class="lbl">Link</div><div class="link" id="linkText">${esc(directUrl(n))}</div></div>
+    ${n.error ? `<div class="err">${esc(n.error)} <button class="btn" data-do="retry" style="margin-left:6px">Try again</button></div>` : ""}
+    <dl class="facts">${facts.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join("")}</dl>
+    ${n.type !== "file" ? `<div><div class="lbl">Load everything below</div><div class="actions">
+      <select class="deepsel" id="deepDepth" aria-label="Depth"><option value="1">2 levels</option><option value="2" selected>3 levels</option><option value="4">5 levels</option><option value="20">All levels</option></select>
+      <button class="btn" data-do="deep">Expand all</button>
+      <button class="btn" data-do="refresh">Refresh</button>
+    </div></div>` : ""}
+    ${helpHtml()}`;
+}
+function helpHtml() {
+  return `<div class="help"><div class="lbl">Keys</div><table>
+  <tr><td><kbd>j</kbd> <kbd>k</kbd></td><td>Move down / up</td></tr>
+  <tr><td><kbd>l</kbd> <kbd>h</kbd></td><td>Expand / collapse (or jump to parent)</td></tr>
+  <tr><td><kbd>E</kbd></td><td>Expand everything below (3 levels)</td></tr>
+  <tr><td><kbd>Enter</kbd> <kbd>o</kbd></td><td>Open in SharePoint</td></tr>
+  <tr><td><kbd>y</kbd></td><td>Copy link</td></tr>
+  <tr><td><kbd>/</kbd></td><td>Filter loaded folders</td></tr>
+  <tr><td><kbd>Ctrl K</kbd></td><td>Find anywhere in SharePoint</td></tr>
+  <tr><td><kbd>p</kbd></td><td>Pin / unpin folder</td></tr>
+  <tr><td><kbd>v</kbd></td><td>Switch Pinned / All view</td></tr>
+  <tr><td><kbd>r</kbd></td><td>Refresh folder</td></tr>
+  </table></div>`;
+}
+function ago(t) { const s = (Date.now() - t) / 1000; if (s < 60) return "just now"; if (s < 3600) return Math.round(s / 60) + " min ago"; if (s < 86400) return Math.round(s / 3600) + " h ago"; return Math.round(s / 86400) + " d ago"; }
+
+function status() {
+  $("stLibs").textContent = `${S.libs.length} ${S.libs.length === 1 ? "library" : "libraries"}`;
+  let f = 0; for (const n of S.nodes.values()) if (n.type === "folder") f++;
+  $("stNodes").textContent = `${f.toLocaleString()} folders loaded`;
+  const mode = S.filter ? "FILTER" : S.deep ? "EXPAND" : "NORMAL";
+  $("mode").textContent = mode;
+  let j = "";
+  if (S.deep) j = `expanding ${S.deep.root}: ${S.deep.done} folders`;
+  else if (S.jobs) j = `${S.jobs} request${S.jobs > 1 ? "s" : ""}…`;
+  else if (S.filter) j = `${S.filterHits || 0} matches`;
+  $("stJobs").textContent = j;
+}
+function banner() {
+  const b = $("banner");
+  if (!S.fatal) { b.hidden = true; return; }
+  b.hidden = false; b.className = "banner bad";
+  b.innerHTML = `<span>${esc(errCopy(S.fatal))}</span>` + (S.fatal.code === "approval_required" || S.fatal.code === "selection_required" ? `<button class="btn" id="approveBtn">Try again</button>` : "");
+  const ab = $("approveBtn"); if (ab) ab.onclick = () => { S.fatal = null; banner(); loadLibraries(); };
+}
+function toast(msg) {
+  const r = $("toastRoot"); r.innerHTML = `<div class="toast" role="status">${esc(msg)}</div>`;
+  clearTimeout(toast.t); toast.t = setTimeout(() => { r.innerHTML = ""; }, 2200);
+}
+
+// ---------- selection ----------
+function select(key, scroll) {
+  S.sel = key; save();
+  if (scroll) {
+    const n = S.nodes.get(key);
+    let c = n && n.parent && S.nodes.get(n.parent);
+    while (c) { S.expanded.add(c.key); c = c.parent && S.nodes.get(c.parent); }
+    buildRows();
+    const i = S.rows.findIndex(r => r.n.key === key);
+    if (i >= 0) {
+      const t = $("tree"), y = i * ROW;
+      if (y < t.scrollTop || y > t.scrollTop + t.clientHeight - ROW * 2) t.scrollTop = Math.max(0, y - t.clientHeight / 3);
+    }
+  }
+  scheduleRender();
+}
+function ensureSelVisible() {
+  const i = S.rows.findIndex(r => r.n.key === S.sel); if (i < 0) return;
+  const t = $("tree"), y = i * ROW;
+  if (y < t.scrollTop) t.scrollTop = y;
+  else if (y + ROW > t.scrollTop + t.clientHeight) t.scrollTop = y + ROW - t.clientHeight;
+}
+function move(d) {
+  buildRows(); if (!S.rows.length) return;
+  let i = S.rows.findIndex(r => r.n.key === S.sel);
+  i = i < 0 ? 0 : Math.max(0, Math.min(S.rows.length - 1, i + d));
+  S.sel = S.rows[i].n.key; ensureSelVisible(); save(); scheduleRender();
+}
+async function copyLink(n) {
+  const url = directUrl(n);
+  try { await navigator.clipboard.writeText(url); toast("Link copied"); }
+  catch { const el = $("linkText"); if (el) { const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); } toast("Press Ctrl C to copy the selected link"); }
+}
+function openNode(n) {
+  const a = document.createElement("a"); a.href = openUrl(n); a.target = "_blank"; a.rel = "noopener";
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function togglePin(n) {
+  if (!n) return;
+  if (S.pinned.has(n.key)) { S.pinned.delete(n.key); S.pinMeta.delete(n.key); toast(`Unpinned ${n.name}`); }
+  else { S.pinned.add(n.key); S.pinMeta.set(n.key, metaOf(n)); toast(`Pinned ${n.name}`); }
+  sortLibs(); save(); syncToggles(); scheduleRender();
+}
+function setView(v) {
+  if (S.view === v) return;
+  S.view = v; $("tree").scrollTop = 0;
+  if (v === "pinned" && S.sel && !underPinned(S.sel)) S.sel = [...S.pinned][0] || null;
+  save(); syncToggles(); scheduleRender();
+  for (const k of roots()) { const n = S.nodes.get(k); if (n && S.expanded.has(k) && !n.children) ensureLoaded(n); }
+}
+
+// ---------- events ----------
+$("tree").addEventListener("scroll", () => { if (S.rows.length && S.signedIn !== false) paintRows(); }, { passive: true });
+$("tree").addEventListener("click", e => {
+  const row = e.target.closest(".row"); if (!row) return;
+  const n = S.nodes.get(row.dataset.k); if (!n) return;
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (act === "go") { S.sel = n.key; save(); scheduleRender(); return; }
+  S.sel = n.key;
+  if (n.type !== "file" && !S.filter) toggle(n);
+  else if (n.type !== "file" && S.filter) { /* in filter mode just select */ ensureLoaded(n); }
+  save(); scheduleRender();
+  $("tree").focus({ preventScroll: true });
+});
+$("tree").addEventListener("dblclick", e => {
+  const row = e.target.closest(".row"); if (!row || e.target.closest("[data-act]")) return;
+  const n = S.nodes.get(row.dataset.k); if (n && n.type === "file") openNode(n);
+});
+$("insp").addEventListener("click", e => {
+  const s = e.target.closest("[data-sel]"); if (s) { select(s.dataset.sel, true); return; }
+  const d = e.target.closest("[data-do]"); if (!d) return;
+  const n = S.nodes.get(S.sel); if (!n) return;
+  const act = d.dataset.do;
+  if (act === "copy") copyLink(n);
+  else if (act === "deep") deepExpand(n, +($("deepDepth")?.value || 2));
+  else if (act === "refresh" || act === "retry") ensureLoaded(n, true);
+  else if (act === "pin") togglePin(n);
+});
+$("filter").addEventListener("input", e => {
+  S.filter = e.target.value.trim(); $("tree").scrollTop = 0; scheduleRender();
+});
+$("filter").addEventListener("keydown", e => {
+  if (e.key === "Escape") { e.target.value = ""; S.filter = ""; scheduleRender(); $("tree").focus(); }
+  if (e.key === "Enter" || e.key === "ArrowDown") { e.preventDefault(); buildRows(); const first = S.rows.find(r => r.m); if (first) S.sel = first.n.key; $("tree").focus(); scheduleRender(); }
+});
+$("toggleFiles").addEventListener("click", () => { S.showFiles = !S.showFiles; save(); syncToggles(); scheduleRender(); });
+$("collapseAll").addEventListener("click", () => { S.expanded.clear(); save(); scheduleRender(); });
+$("moreSites").addEventListener("click", () => loadLibraries(true));
+$("account").addEventListener("click", async () => {
+  if ($("account").dataset.confirm !== "1") { $("account").dataset.confirm = "1"; $("account").textContent = "Click again to sign out"; setTimeout(() => { $("account").dataset.confirm = ""; syncAccount(); }, 3000); return; }
+  await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+  // forget everything cached from this account
+  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+  S.nodes.clear(); S.libs = []; S.expanded.clear(); S.pinned.clear(); S.pinMeta.clear(); S.sel = null; saveDirty = false; clearTimeout(saveT);
+  S.signedIn = false; S.user = ""; syncAccount(); scheduleRender(); checkAuth();
+});
+$("spacer").addEventListener("click", e => {
+  if (e.target.closest("[data-do=signin]")) startSignIn();
+  const cc = e.target.closest("[data-do=copycode]");
+  if (cc) navigator.clipboard.writeText(cc.dataset.code).then(() => toast("Code copied"), () => toast("Select the code and copy it"));
+});
+$("openFinder").addEventListener("click", () => finder.open());
+$("cancelDeep").addEventListener("click", () => { if (S.deep) { S.deep.cancel = true; S.deep = null; $("cancelDeep").hidden = true; status(); toast("Stopped expanding"); } });
+$("viewPinned").addEventListener("click", () => setView("pinned"));
+$("viewAll").addEventListener("click", () => setView("all"));
+$("spacer").addEventListener("click", e => { const b = e.target.closest("[data-view]"); if (b) setView(b.dataset.view); });
+function syncToggles() {
+  $("viewPinned").setAttribute("aria-pressed", S.view === "pinned"); $("viewAll").setAttribute("aria-pressed", S.view === "all");
+  $("pinCount").textContent = S.pinned.size;
+  $("collapseAll").title = S.view === "pinned" ? "Collapse pinned folders" : "Collapse everything";
+$("toggleFiles").classList.toggle("on", S.showFiles); $("toggleFiles").setAttribute("aria-pressed", S.showFiles); }
+
+document.addEventListener("keydown", e => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K" || e.key === "p" || e.key === "P")) { e.preventDefault(); finder.open(); return; }
+  if (finder.isOpen) return;
+  const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
+  if (typing) return;
+  const n = S.sel && S.nodes.get(S.sel);
+  switch (e.key) {
+    case "/": e.preventDefault(); $("filter").focus(); $("filter").select(); break;
+    case "j": case "ArrowDown": e.preventDefault(); move(1); break;
+    case "k": case "ArrowUp": e.preventDefault(); move(-1); break;
+    case "g": move(-1e9); break;
+    case "G": move(1e9); break;
+    case "l": case "ArrowRight": e.preventDefault();
+      if (n && n.type !== "file") { if (!S.expanded.has(n.key) && !S.filter) toggle(n, true); else move(1); } break;
+    case "h": case "ArrowLeft": e.preventDefault();
+      if (n) { if (S.expanded.has(n.key) && !S.filter && n.type !== "file") toggle(n, false); else if (n.parent) select(n.parent, true); } break;
+    case "Enter": case "o": if (n) { e.preventDefault(); openNode(n); } break;
+    case " ": if (n && n.type !== "file") { e.preventDefault(); toggle(n); } break;
+    case "y": if (n) copyLink(n); break;
+    case "E": if (n) deepExpand(n, 2); break;
+    case "r": if (n) ensureLoaded(n, true); break;
+    case "p": if (n) togglePin(n); break;
+    case "v": setView(S.view === "pinned" ? "all" : "pinned"); break;
+    case "Escape": if (S.filter) { $("filter").value = ""; S.filter = ""; scheduleRender(); } break;
+  }
+});
+window.addEventListener("resize", () => scheduleRender());
+
+// ---------- finder (Ctrl K) ----------
+const finder = {
+  isOpen: false, q: "", local: [], remote: [], remoteState: "idle", act: 0, timer: 0, seq: 0,
+  open() {
+    this.isOpen = true; this.q = ""; this.local = []; this.remote = []; this.remoteState = "idle"; this.act = 0;
+    $("finderRoot").innerHTML = `<div class="scrim" id="scrim"><div class="finder" role="dialog" aria-label="Find in SharePoint">
+      <div class="q"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--accent)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="fq" placeholder="Folder name — e.g. 見積書, deployment, contracts" autocomplete="off" spellcheck="false"><kbd>Esc</kbd></div>
+      <div class="flist" id="flist"></div>
+      <div class="ffoot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> show in tree</span><span><kbd>Shift Enter</kbd> open in SharePoint</span><span><kbd>Alt Enter</kbd> pin / unpin</span></div>
+    </div></div>`;
+    $("scrim").addEventListener("mousedown", e => { if (e.target.id === "scrim") this.close(); });
+    const fq = $("fq"); fq.focus();
+    fq.addEventListener("input", () => this.query(fq.value));
+    fq.addEventListener("keydown", e => this.key(e));
+    $("flist").addEventListener("click", e => { const it = e.target.closest(".fitem"); if (it) { this.act = +it.dataset.i; this.choose(e.shiftKey || !!e.target.closest(".fgo")); } });
+    this.paint();
+  },
+  close() { this.isOpen = false; $("finderRoot").innerHTML = ""; $("tree").focus({ preventScroll: true }); },
+  items() { return [...this.local.map(x => ({ ...x, kind: "local" })), ...this.remote.map(x => ({ ...x, kind: "remote" }))]; },
+  query(q) {
+    this.q = q.trim(); this.act = 0;
+    const res = [];
+    if (this.q) for (const n of S.nodes.values()) {
+      if (!visible(n)) continue;
+      const m = fuzzy(this.q, n.name); if (m) res.push({ n, m, score: m.score - n.depth });
+    }
+    res.sort((a, b) => b.score - a.score); this.local = res.slice(0, 40);
+    clearTimeout(this.timer);
+    if (this.q.length >= 2) {
+      this.remoteState = "loading";
+      const seq = ++this.seq, qq = this.q;
+      this.timer = setTimeout(async () => {
+        try {
+          const r = await api("/api/search?" + new URLSearchParams({ q: qq, files: S.showFiles ? "1" : "0" }));
+          if (seq !== this.seq) return;
+          const localKeys = new Set(this.local.map(x => x.n.key));
+          this.remote = (r.items || []).map(h => ({ ...h, key: itemKey(h.driveId, h.id) })).filter(h => !localKeys.has(h.key));
+          this.remoteState = "done";
+        } catch (e) { if (seq !== this.seq) return; this.remoteState = "error"; this.remoteErr = errCopy(e); handleErr(e); }
+        this.paint();
+      }, 350);
+    } else { this.remote = []; this.remoteState = "idle"; }
+    this.paint();
+  },
+  paint() {
+    const el = $("flist"); if (!el) return;
+    const items = this.items(); let i = 0, html = "";
+    if (!this.q) html = `<div class="empty" style="padding:18px 14px">Type part of a folder name. Loaded folders match instantly; SharePoint-wide results follow below.</div>`;
+    if (this.local.length) {
+      html += `<div class="fsec">Loaded in tree</div>`;
+      for (const x of this.local) {
+        const p = pathOf(x.n).slice(0, -1).map(p => p.name).join(" › ");
+        html += `<div class="fitem${i === this.act ? " act" : ""}" data-i="${i}"><span class="ico ${x.n.type === "file" ? "file" : x.n.type === "lib" ? "lib" : "folder"}">${x.n.type === "file" ? ICON.file : x.n.type === "lib" ? ICON.lib : ICON.folder}</span><span class="fn">${hl(x.n.name, x.m.idx)}</span>${S.pinned.has(x.n.key) ? `<span class="pin">${ICON.star}</span>` : ""}<span class="fp">${esc(p)}</span></div>`;
+        i++;
+      }
+    }
+    if (this.q.length >= 2) {
+      html += `<div class="fsec">All of SharePoint ${this.remoteState === "loading" ? '<span class="spin"></span>' : ""}</div>`;
+      if (this.remoteState === "error") html += `<div class="fitem err">${esc(this.remoteErr)}</div>`;
+      else if (this.remoteState === "done" && !this.remote.length) html += `<div class="fitem" style="color:var(--muted);cursor:default">No other folders named like “${esc(this.q)}”.</div>`;
+      for (const h of this.remote) {
+        const path = h.path || "";
+        const m = fuzzy(this.q, h.name || "");
+        html += `<div class="fitem${i === this.act ? " act" : ""}" data-i="${i}"><span class="ico ${h.folder ? "folder" : "file"}">${h.folder ? ICON.folder : ICON.file}</span><span class="fn">${hl(h.name || "", m && m.idx)}</span>${S.pinned.has(h.key) ? `<span class="pin">${ICON.star}</span>` : ""}<span class="fp">${esc(path)}</span></div>`;
+        i++;
+      }
+    }
+    el.innerHTML = html;
+    el.querySelector(".fitem.act")?.scrollIntoView({ block: "nearest" });
+  },
+  key(e) {
+    const len = this.items().length;
+    if (e.key === "Escape") { e.preventDefault(); this.close(); }
+    else if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n") || (e.ctrlKey && e.key === "j")) { e.preventDefault(); this.act = Math.min(len - 1, this.act + 1); this.paint(); }
+    else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p") || (e.ctrlKey && e.key === "k")) { e.preventDefault(); this.act = Math.max(0, this.act - 1); this.paint(); }
+    else if (e.key === "Enter" && e.altKey) { e.preventDefault(); this.pin(); }
+    else if (e.key === "Enter") { e.preventDefault(); this.choose(e.shiftKey); }
+  },
+  nodeFor(it) {
+    if (it.kind === "local") return it.n;
+    if (S.nodes.has(it.key)) return S.nodes.get(it.key);
+    const trail = (it.path || "").split(" › ").filter(Boolean);
+    return standalone({ key: it.key, driveId: it.driveId, id: it.id, type: it.folder ? "folder" : "file", name: it.name, webUrl: it.webUrl, trail });
+  },
+  pin() {
+    const it = this.items()[this.act]; if (!it) return;
+    const n = this.nodeFor(it); if (!n) return;
+    togglePin(n); this.paint();
+  },
+  async choose(openIt) {
+    const it = this.items()[this.act]; if (!it) return;
+    if (it.kind === "local") {
+      if (openIt) openNode(it.n);
+      this.close(); clearFilter();
+      if (S.view === "pinned" && !underPinned(it.n.key)) setView("all");
+      select(it.n.key, true);
+    } else {
+      if (openIt) openNode(it);
+      this.close(); clearFilter();
+      toast("Opening the path in the tree…");
+      if (S.view === "pinned" && !S.pinned.has(it.key)) setView("all");
+      if (S.pinned.has(it.key)) { select(it.key, true); return; }
+      await reveal(it.driveId, it.id);
+    }
+  },
+};
+function clearFilter() { if (S.filter) { S.filter = ""; $("filter").value = ""; } }
+
+// ---------- auth + libraries ----------
+function signInHtml() {
+  const p = S.auth && S.auth.pending;
+  if (p) return `<div class="empty"><h2>Sign in to Microsoft 365</h2>
+    <p>Open <a href="${esc(p.verificationUri)}" target="_blank" rel="noopener">${esc(p.verificationUri)}</a> and enter this code:</p>
+    <p><span class="link" style="font-size:22px;letter-spacing:.12em;display:inline-block;padding:8px 16px">${esc(p.userCode)}</span>
+    <button class="btn" data-do="copycode" data-code="${esc(p.userCode)}">Copy code</button></p>
+    <p>This page continues on its own once you've signed in. sptree only reads; it never changes your files.</p></div>`;
+  const err = S.auth && S.auth.error ? `<p class="err">${esc(S.auth.error)}</p>` : "";
+  return `<div class="empty"><h2>Sign in to Microsoft 365</h2><p>sptree reads your SharePoint and OneDrive folders through Microsoft Graph, using your own account.</p>${err}<button class="btn primary" data-do="signin">Sign in</button></div>`;
+}
+let authTimer = 0;
+async function checkAuth() {
+  clearTimeout(authTimer);
+  try {
+    const a = await api("/api/auth");
+    S.auth = a; S.fatal = null; banner();
+    const was = S.signedIn;
+    S.signedIn = !!a.signedIn; S.user = a.user || "";
+    syncAccount();
+    if (S.signedIn && was !== true) loadLibraries();
+    if (!S.signedIn) authTimer = setTimeout(checkAuth, 2000);
+  } catch (e) { S.fatal = e; banner(); authTimer = setTimeout(checkAuth, 5000); }
+  scheduleRender();
+}
+async function startSignIn() {
+  try { S.auth = await api("/api/auth/login", { method: "POST" }); } catch (e) { handleErr(e); }
+  scheduleRender(); checkAuth();
+}
+function syncAccount() {
+  const b = $("account");
+  b.hidden = !S.signedIn;
+  if (b.dataset.confirm !== "1") b.textContent = S.user ? S.user + " · Sign out" : "Sign out";
+}
+async function loadLibraries(refresh) {
+  if (S.loadingLibs) return;
+  S.loadingLibs = true; scheduleRender();
+  const before = S.libs.length;
+  try {
+    const r = await api("/api/libraries" + (refresh ? "?refresh=1" : ""));
+    (r.libraries || []).forEach(l => addLib(l, true));
+    sortLibs(); save();
+    if (refresh) toast(S.libs.length > before ? `Found ${S.libs.length - before} new libraries` : "Library list is up to date");
+  } catch (e) { handleErr(e); if (e.code !== "needs_login") toast(errCopy(e)); }
+  finally {
+    S.loadingLibs = false; S.ready = true; scheduleRender();
+    for (const k of S.expanded) { const n = S.nodes.get(k); if (n && !n.children) ensureLoaded(n); }
+  }
+}
+
+// ---------- boot ----------
+load(); syncToggles(); sortLibs();
+if (S.libs.length) S.ready = true;
+render();
+checkAuth();
+})();
+</script>
+
+</body>
+</html>
