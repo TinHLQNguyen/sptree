@@ -198,3 +198,17 @@ func TestKQL(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadDotEnv(t *testing.T) {
+	p := filepath.Join(t.TempDir(), ".env")
+	os.WriteFile(p, []byte("# comment\nSPTREE_T_A=abc\nexport SPTREE_T_B=\"x y\"\nSPTREE_T_C=from-file\n\nnot a pair\n"), 0o600)
+	t.Setenv("SPTREE_T_C", "from-env")
+	t.Setenv("SPTREE_T_A", "")
+	os.Unsetenv("SPTREE_T_A")
+	t.Setenv("SPTREE_T_B", "")
+	os.Unsetenv("SPTREE_T_B")
+	loadDotEnv(p)
+	if a, b, c := os.Getenv("SPTREE_T_A"), os.Getenv("SPTREE_T_B"), os.Getenv("SPTREE_T_C"); a != "abc" || b != "x y" || c != "from-env" {
+		t.Fatalf("got A=%q B=%q C=%q", a, b, c)
+	}
+}

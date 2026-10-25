@@ -62,13 +62,14 @@ No client secret is needed. sptree is a public client and only gets delegated pe
 sptree -client-id <application-id> -tenant <tenant-id-or-domain>
 ```
 
-or with environment variables:
+or put the IDs in a `.env` file (git-ignored) in the directory you run sptree from:
 
 ```sh
-export SPTREE_CLIENT_ID=<application-id>
-export SPTREE_TENANT=contoso.onmicrosoft.com
+cp .env.example .env   # then set SPTREE_CLIENT_ID and SPTREE_TENANT
 sptree
 ```
+
+Any of the environment variables below can go in `.env`. Variables already set in your shell take precedence, and flags override both.
 
 Your browser opens at `http://127.0.0.1:8765/`. The first time, it shows a code: open `https://microsoft.com/devicelogin`, enter the code, and sign in. The code is also printed in the terminal, so sign-in works over SSH too. After that, sptree reuses the saved sign-in.
 

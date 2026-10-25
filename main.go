@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -31,6 +32,7 @@ Flags:
 `
 
 func main() {
+	loadDotEnv(".env")
 	clientID := flag.String("client-id", envOr("SPTREE_CLIENT_ID", ""), "Entra ID (Azure AD) application (client) ID [env SPTREE_CLIENT_ID]")
 	tenant := flag.String("tenant", envOr("SPTREE_TENANT", "organizations"), "tenant ID or domain, or 'organizations' [env SPTREE_TENANT]")
 	addr := flag.String("addr", envOr("SPTREE_ADDR", "127.0.0.1:8765"), "address to listen on (loopback only)")
@@ -104,6 +106,29 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// loadDotEnv sets variables from a KEY=value file (# comments, optional quotes).
+// Variables already set in the environment win. A missing file is fine.
+func loadDotEnv(path string) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "export "))
+		k, v, ok := strings.Cut(line, "=")
+		if !ok || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v = strings.TrimSpace(k), strings.TrimSpace(v)
+		if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+			v = v[1 : len(v)-1]
+		}
+		if _, set := os.LookupEnv(k); !set && k != "" {
+			os.Setenv(k, v)
+		}
+	}
 }
 
 func fatal(a ...any) {
